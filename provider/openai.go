@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/heather7532/nuro/provider"
+
 	"io"
 	"net/http"
 	"strings"
@@ -18,7 +18,7 @@ type openAIProvider struct {
 	client  *http.Client
 }
 
-func NewOpenAIProvider(apiKey, baseURL string) provider.Provider {
+func NewOpenAIProvider(apiKey, baseURL string) Provider {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
 	}
@@ -77,9 +77,9 @@ type oaStreamChunk struct {
 	Choices []oaStreamChoice `json:"choices"`
 }
 
-func (p *openAIProvider) Complete(ctx context.Context, args provider.CompletionArgs) (
+func (p *openAIProvider) Complete(ctx context.Context, args CompletionArgs) (
 	string,
-	provider.Usage, error,
+	Usage, error,
 ) {
 	body := oaChatRequest{
 		Model:       args.Model,
@@ -95,33 +95,33 @@ func (p *openAIProvider) Complete(ctx context.Context, args provider.CompletionA
 		ctx, "POST", p.baseURL+"/chat/completions", bytes.NewReader(buf),
 	)
 	if err != nil {
-		return "", provider.Usage{}, err
+		return "", Usage{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return "", provider.Usage{}, err
+		return "", Usage{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return "", provider.Usage{}, fmt.Errorf("openai error: %s - %s", resp.Status, trimBody(b))
+		return "", Usage{}, fmt.Errorf("openai error: %s - %s", resp.Status, trimBody(b))
 	}
 
 	var r oaResp
 	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		return "", provider.Usage{}, err
+		return "", Usage{}, err
 	}
 	if len(r.Choices) == 0 {
-		return "", provider.Usage{}, fmt.Errorf("openai: no choices returned")
+		return "", Usage{}, fmt.Errorf("openai: no choices returned")
 	}
 	text := r.Choices[0].Message.Content
-	usage := provider.Usage{}
+	usage := Usage{}
 	if r.Usage != nil {
-		usage = provider.Usage{
+		usage = Usage{
 			PromptTokens:     r.Usage.PromptTokens,
 			CompletionTokens: r.Usage.CompletionTokens,
 			TotalTokens:      r.Usage.TotalTokens,
@@ -131,8 +131,8 @@ func (p *openAIProvider) Complete(ctx context.Context, args provider.CompletionA
 }
 
 func (p *openAIProvider) Stream(
-	ctx context.Context, args provider.CompletionArgs, onDelta func(string),
-) (string, provider.Usage, error) {
+	ctx context.Context, args CompletionArgs, onDelta func(string),
+) (string, Usage, error) {
 	body := oaChatRequest{
 		Model:       args.Model,
 		Messages:    assembleMessages(args.Prompt, args.Data),
@@ -147,7 +147,7 @@ func (p *openAIProvider) Stream(
 		ctx, "POST", p.baseURL+"/chat/completions", bytes.NewReader(buf),
 	)
 	if err != nil {
-		return "", provider.Usage{}, err
+		return "", Usage{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -159,13 +159,13 @@ func (p *openAIProvider) Stream(
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return "", provider.Usage{}, err
+		return "", Usage{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
-		return "", provider.Usage{}, fmt.Errorf("openai error: %s - %s", resp.Status, trimBody(b))
+		return "", Usage{}, fmt.Errorf("openai error: %s - %s", resp.Status, trimBody(b))
 	}
 
 	reader := bufio.NewReader(resp.Body)
@@ -197,22 +197,21 @@ func (p *openAIProvider) Stream(
 				break
 			}
 			if ctx.Err() != nil {
-				return total.String(), provider.Usage{}, ctx.Err()
+				return total.String(), Usage{}, ctx.Err()
 			}
 			// continue on short reads
 			if err == io.ErrUnexpectedEOF {
 				continue
 			}
 			if err != nil && err != io.EOF {
-				return total.String(), provider.Usage{}, err
+				return total.String(), Usage{}, err
 			}
 		}
 	}
 
-	// Usage is not present in streamed chunks here; do not report unless you later call the usage endpoint.
-	return total.String(), provider.Usage{}, nil
+	// Usage is not present in streamed chunks here
+	return total.String(), Usage{}, nil
 }
-
 func assembleMessages(prompt, data string) []oaChatMsg {
 	msgs := []oaChatMsg{}
 	if strings.TrimSpace(prompt) != "" {

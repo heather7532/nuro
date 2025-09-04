@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"nuro/provider"
 	"os"
 	"time"
 
+	"github.com/heather7532/nuro/provider"
+	"github.com/heather7532/nuro/resolver"
 	"github.com/spf13/pflag"
 )
 
@@ -92,14 +93,14 @@ func main() {
 	if err != nil {
 		exitWithErr(err, 2)
 	}
-
 	// Discover provider/model from env/args (no MCP in v1)
-	res, err := resolveProviderAndModel(flags.modelArg)
+	res, err := resolver.ResolveProviderAndModel(flags.modelArg)
 	if err != nil {
 		exitWithErr(err, 3)
 	}
+
 	if flags.verbose || (pflag.CommandLine.Changed("model") && !flags.jsonOut) {
-		fmt.Fprintf(os.Stderr, "nuro: provider=%s model=%s\n", res.ProviderName, res.Model)
+		_, _ = fmt.Fprintf(os.Stderr, "nuro: provider=%s model=%s\n", res.ProviderName, res.Model)
 	}
 
 	// Build request
@@ -118,7 +119,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), args.Timeout)
 	defer cancel()
 
-	prov, err := provider.buildProvider(res)
+	prov, err := provider.BuildProvider(res)
 	if err != nil {
 		exitWithErr(err, 3)
 	}
@@ -127,7 +128,7 @@ func main() {
 		total, usage, err := prov.Stream(
 			ctx, args, func(delta string) {
 				// Stream deltas to stdout as they arrive
-				fmt.Fprint(os.Stdout, delta)
+				_, _ = fmt.Fprint(os.Stdout, delta)
 			},
 		)
 		if err != nil {
@@ -140,7 +141,7 @@ func main() {
 				Usage:    usage,
 				Text:     total,
 			}
-			fmt.Fprintln(os.Stdout) // newline after streaming text block if any
+			_, _ = fmt.Fprintln(os.Stdout) // newline after streaming text block if any
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			_ = enc.Encode(out)
@@ -164,12 +165,12 @@ func main() {
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(out)
 	} else {
-		fmt.Fprintln(os.Stdout, text)
+		_, _ = fmt.Fprintln(os.Stdout, text)
 	}
 }
 
 func exitWithErr(err error, code int) {
-	fmt.Fprintf(os.Stderr, "nuro: %v\n", err)
+	_, _ = fmt.Fprintf(os.Stderr, "nuro: %v\n", err)
 	os.Exit(code)
 }
 

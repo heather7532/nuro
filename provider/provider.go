@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"github.com/heather7532/nuro"
 	"time"
 )
 
@@ -11,6 +10,13 @@ type Usage struct {
 	PromptTokens     int `json:"prompt_tokens,omitempty"`
 	CompletionTokens int `json:"completion_tokens,omitempty"`
 	TotalTokens      int `json:"total_tokens,omitempty"`
+}
+
+type ProviderResolution struct {
+	ProviderName string
+	Model        string
+	APIKey       string
+	BaseURL      string
 }
 
 type JSONResult struct {
@@ -40,10 +46,10 @@ type Provider interface {
 	)
 }
 
-func buildProvider(res *main.providerResolution) (Provider, error) {
+func BuildProvider(res *ProviderResolution) (Provider, error) {
 	switch res.ProviderName {
 	case "openai":
-		return main.NewOpenAIProvider(res.APIKey, res.BaseURL), nil
+		return NewOpenAIProvider(res.APIKey, res.BaseURL), nil
 	default:
 		return nil, fmt.Errorf(
 			"provider '%s' not implemented yet; set NURO_PROVIDER=openai or provide OPENAI_API_KEY",
