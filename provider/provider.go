@@ -1,8 +1,9 @@
-package main
+package provider
 
 import (
 	"context"
 	"fmt"
+	"github.com/heather7532/nuro"
 	"time"
 )
 
@@ -39,10 +40,10 @@ type Provider interface {
 	)
 }
 
-func buildProvider(res *providerResolution) (Provider, error) {
+func buildProvider(res *main.providerResolution) (Provider, error) {
 	switch res.ProviderName {
 	case "openai":
-		return NewOpenAIProvider(res.APIKey, res.BaseURL), nil
+		return main.NewOpenAIProvider(res.APIKey, res.BaseURL), nil
 	default:
 		return nil, fmt.Errorf(
 			"provider '%s' not implemented yet; set NURO_PROVIDER=openai or provide OPENAI_API_KEY",

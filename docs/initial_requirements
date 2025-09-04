@@ -1,0 +1,158 @@
+# nuro Requirements (v1.x.x)
+
+## 1) General
+
+- **nuro** is a Golang CLI to interact with LLMs.
+- Supports pipes and redirects (stdin/stdout).
+- No MCP in v1.x.x. Native provider HTTP APIs only (OpenAI, Anthropic, etc.) via a small adapter interface.
+- Cross-platform builds via Makefile (Linux/macOS/Windows; amd64 & arm64).
+- Minimal deps, idiomatic Go, portable.
+
+---
+
+## 2) Environment Variables & Provider Discovery
+
+- **Primary precedence**: NURO_* variables (e.g., `NURO_API_KEY`, `NURO_MODEL`, optional `NURO_PROVIDER`).
+- **If no NURO_* present**, auto-discover common keys (case-sensitive):
+  - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `AZURE_OPENAI_API_KEY`,
+  - `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `MISTRAL_API_KEY`, `TOGETHER_API_KEY`, `COHERE_API_KEY`, ...
+- **Selection rules** when multiple keys exist:
+  1. Prefer `OPENAI_API_KEY`.
+  2. Otherwise choose the provider key alphabetically.
+- **--model/-m override**:
+  - If value starts with `$`, treat it as an env var name and read its value (e.g., `--model $MY_MODEL` → read `MY_MODEL` env; value like `gpt-4.1-mini`).
+  - Else, use value literally.
+  - If a model is chosen that implies a provider (e.g., `gpt-` → OpenAI) but no matching key is available, produce a clear error explaining what key is needed.
+  - If no usable keys found at all → actionable error with examples.
+
+---
+
+## 3) CLI Parameters & I/O Rules
+
+### Prompt
+- `-p "text"` / `--prompt "text"` → prompt = "text".
+- `-p` (no value) → prompt = stdin.
+- If stdin empty → error ("no prompt provided on stdin").
+
+### Data
+- `--data "inline string"` → data = "inline string".
+- `--data` with no value → error (disallowed).
+- `--data-file <path>` → data = file contents (OS-native path).
+- **Default stdin→data**:
+  - If stdin is present (pipe/redirect) and not claimed by `-p` (no value), stdin → data.
+  - Example: `echo '{"a":1}' | nuro -p "Summarize"` → prompt from flag, data from stdin.
+
+### Conflicts
+- If both prompt and data try to read from stdin (e.g., `-p` with no value and an attempt to bind stdin to data) → error with guidance (use `--data "..."` or `--data-file`).
+- If `-p` (no value) and `--data "inline"` together → valid (prompt from stdin, data from inline).
+
+---
+
+## 4) Control & Tuning Flags
+
+- `--max-tokens <int>` (default: 1024)
+- `--temperature <float>` (default: 0.7)
+- `--top-p <float>` (default: 1.0)
+- `--timeout <seconds>` (default: 60)
+- `--stream` (boolean) → stream tokens to stdout as generated
+- `--json` (boolean) → output structured JSON (include provider, model, usage, and text)
+
+---
+
+## 5) Informational Flags
+
+- `-m, --model <id or $ENV>` → pick/override model as above.
+  - If provided without a leading `$`, use literally.
+  - When specified, nuro should print the resolved provider+model (to stderr or when --verbose) and continue execution.
+- `--help` → usage + exit.
+- `--version` → version + exit.
+- `--verbose` (optional) → print diagnostics: chosen provider, model, key source (redacted), request params.
+
+---
+
+## 6) Defaults & Behavior
+
+- **Defaults**: temperature=0.7, max-tokens=1024, top-p=1.0, timeout=60s, retries=2 (exponential backoff).
+- **Output**: plain text to stdout unless `--json` is set.
+- **Exit codes**:
+  - `0` success
+  - `2` usage error (bad flags, missing stdin when required, etc.)
+  - `3` provider/model/config error
+  - `4` network/API error
+
+---
+
+## 7) Error Handling (clear & actionable)
+
+- `--data` without value → error explaining correct usage.
+- `-p` without value and empty stdin → error explaining to supply stdin or `--prompt`.
+- Both prompt & data attempting to read stdin → error with remedy suggestions.
+- No usable provider keys found → list which envs were checked and examples to set them.
+- Model requires a provider whose key is missing → name the missing env variable.
+
+---
+
+## 8) Provider Abstraction (v1 native adapters)
+
+- A tiny internal Provider interface: `Name()`, `Supports(model)`, `Complete(args…)`, `Stream(args…)`.
+- Built-in adapters for common vendors using their native HTTP APIs.
+- Model inference helpers (e.g., prefixes or explicit maps) to route model → adapter.
+- Pluggable registry so adding new providers is a small file + entry.
+
+---
+
+## 9) Build & Packaging
+
+- **Makefile targets** for:
+  - darwin/amd64, darwin/arm64
+  - linux/amd64, linux/arm64
+  - windows/amd64
+- `make build`, `make test`, `make release` (produces checksummed artifacts).
+- Optional VERSION injection via `-ldflags "-X main.version=$(GIT_TAG)"`.
+
+---
+
+## 10) Examples
+
+```bash
+# Prompt inline, data via stdin (default)
+cat data.json | nuro -p "Summarize key points"
+
+# Prompt from stdin, data inline
+echo "Write a haiku about {{topic}}" | nuro -p --data '{"topic":"golf"}'
+
+# Model from env indirection
+export MYMODEL=gpt-4o-mini
+nuro -m $MYMODEL -p "Explain altimeter vs barometer"
+
+# JSON output and streaming
+cat input.txt | nuro -p "Translate to French" --stream --json
+```
+
+---
+
+# nuro Roadmap (v2.0.0 — MCP Support)
+
+## A) Goal
+
+Add optional MCP transport so nuro can talk to MCP-exposed models/tools when available, while retaining all v1 native adapters as fallback.
+
+## B) Changes
+
+- New `--transport {native|mcp}` (default: native).
+- MCP connection config via env/flags (e.g., `NURO_MCP_SERVER`, `--mcp-server`, `--mcp-token`).
+- Provider registry gains "MCP-capable" metadata and endpoints where applicable.
+- Behavior: if `--transport mcp` is set and MCP connection fails, show a clear error; if not set, continue using native providers.
+
+## C) Compatibility
+
+- No breaking changes to v1 flags or defaults.
+- Same stdin/prompt/data rules.
+- Same error codes; add MCP-specific diagnostics when chosen.
+
+---
+
+## Suggested next two steps
+
+1. Lock the flag schema in code (parse & validate; implement stdin arbitration exactly as specified).
+2. Implement env discovery + provider resolution (NURO_* precedence, OpenAI-first, alpha fallback) and print the resolved provider/model in --verbose.
