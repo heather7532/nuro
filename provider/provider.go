@@ -17,6 +17,7 @@ type ProviderResolution struct {
 	Model        string
 	APIKey       string
 	BaseURL      string
+	KeySource    string
 }
 
 type JSONResult struct {

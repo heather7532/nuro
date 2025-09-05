@@ -213,18 +213,32 @@ func (p *openAIProvider) Stream(
 	return total.String(), Usage{}, nil
 }
 func assembleMessages(prompt, data string) []oaChatMsg {
-	msgs := []oaChatMsg{}
-	if strings.TrimSpace(prompt) != "" {
-		msgs = append(msgs, oaChatMsg{Role: "user", Content: prompt})
+	content := buildUserContent(prompt, data)
+	return []oaChatMsg{{Role: "user", Content: content}}
+}
+
+// helper builds a single user message with clear labels & fencing
+func buildUserContent(prompt, data string) string {
+	p := strings.TrimSpace(prompt)
+	d := strings.TrimSpace(data)
+
+	// When both prompt and data are present, combine them naturally
+	if p != "" && d != "" {
+		return fmt.Sprintf("%s in the following data: %s", p, d)
 	}
-	if strings.TrimSpace(data) != "" {
-		msgs = append(msgs, oaChatMsg{Role: "user", Content: "DATA:\n" + data})
+
+	// If only prompt, use it directly
+	if p != "" {
+		return p
 	}
-	// If neither is present, we still send an empty prompt (to satisfy API), though this is rare.
-	if len(msgs) == 0 {
-		msgs = append(msgs, oaChatMsg{Role: "user", Content: ""})
+
+	// If only data, present it clearly
+	if d != "" {
+		return fmt.Sprintf("Data:\n```\n%s\n```", d)
 	}
-	return msgs
+
+	// If both are empty, still send an empty string to satisfy API
+	return ""
 }
 
 func trimBody(b []byte) string {

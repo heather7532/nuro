@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/heather7532/nuro/provider"
@@ -16,7 +17,7 @@ import (
 
 type cliFlags struct {
 	promptFlag     string // value when provided as --prompt "..."
-	promptUseStdin bool   // true when -p is present with *no value*
+	promptUseStdin bool   // true when --prompt-stdin is present
 	dataInline     string // --data "..."
 	dataFile       string // --data-file path
 	modelArg       string // -m / --model
@@ -28,6 +29,7 @@ type cliFlags struct {
 	jsonOut        bool
 	verbose        bool
 	showVersion    bool
+	force          bool // -f / --force to override data size warnings
 }
 
 func parseFlags() (*cliFlags, error) {
@@ -35,7 +37,11 @@ func parseFlags() (*cliFlags, error) {
 
 	pflag.StringVarP(
 		&f.promptFlag, "prompt", "p", "",
-		"Prompt text. Use '-p' with no value to read prompt from stdin.",
+		"Prompt text. Use --prompt-stdin to read prompt from stdin instead.",
+	)
+	pflag.BoolVar(
+		&f.promptUseStdin, "prompt-stdin", false,
+		"Read prompt from stdin instead of using --prompt",
 	)
 	pflag.StringVar(&f.dataInline, "data", "", "Inline data/payload string.")
 	pflag.StringVar(&f.dataFile, "data-file", "", "Path to file containing data/payload.")
@@ -50,22 +56,15 @@ func parseFlags() (*cliFlags, error) {
 	pflag.BoolVar(&f.stream, "stream", false, "Stream tokens to stdout.")
 	pflag.BoolVar(&f.jsonOut, "json", false, "Emit structured JSON result.")
 	pflag.BoolVar(&f.verbose, "verbose", false, "Verbose diagnostics to stderr.")
+	pflag.BoolVarP(&f.force, "force", "f", false, "Force sending large data without warnings.")
 	pflag.BoolVar(&f.showVersion, "version", false, "Print version and exit.")
 	// --help is auto-provided
 
 	pflag.Parse()
 
-	// Enable optional "no value" form for -p / --prompt
-	if fl := pflag.Lookup("prompt"); fl != nil {
-		// If user wrote `-p` with no following value, pflag sets promptFlag to this sentinel.
-		// We configure this sentinel via NoOptDefVal below:
-		if fl.NoOptDefVal == "" {
-			fl.NoOptDefVal = "__NURO_PROMPT_STDIN__"
-		}
-		if f.promptFlag == "__NURO_PROMPT_STDIN__" {
-			f.promptUseStdin = true
-			f.promptFlag = "" // clear to avoid confusion; stdin will be used
-		}
+	// Check for conflicting prompt flags
+	if f.promptFlag != "" && f.promptUseStdin {
+		return nil, usageError("cannot use both --prompt and --prompt-stdin")
 	}
 
 	// Disallow --data with no value (must be explicitly provided)
@@ -93,6 +92,15 @@ func main() {
 	if err != nil {
 		exitWithErr(err, 2)
 	}
+
+	// Validate data size and warn about potential costs
+	if err := validateDataSize(data, flags.force, flags.verbose); err != nil {
+		exitWithErr(err, 2)
+	}
+
+	// Build the combined message content for verbose output
+	combinedContent := buildCombinedContent(prompt, data)
+
 	// Discover provider/model from env/args (no MCP in v1)
 	res, err := resolver.ResolveProviderAndModel(flags.modelArg)
 	if err != nil {
@@ -100,7 +108,26 @@ func main() {
 	}
 
 	if flags.verbose || (pflag.CommandLine.Changed("model") && !flags.jsonOut) {
-		_, _ = fmt.Fprintf(os.Stderr, "nuro: provider=%s model=%s\n", res.ProviderName, res.Model)
+		keyDisplay := redactKey(res.APIKey)
+		_, _ = fmt.Fprintf(
+			os.Stderr, "nuro: provider=%s model=%s key=%s source=%s\n", res.ProviderName, res.Model,
+			keyDisplay, res.KeySource,
+		)
+
+		if flags.verbose {
+			_, _ = fmt.Fprintf(
+				os.Stderr,
+				"nuro: args max_tokens=%d temp=%.1f top_p=%.1f timeout=%ds stream=%t json=%t\n",
+				flags.maxTokens, flags.temperature, flags.topP, flags.timeoutSec, flags.stream,
+				flags.jsonOut,
+			)
+			_, _ = fmt.Fprintf(
+				os.Stderr, "nuro: prompt_len=%d data_len=%d\n", len(prompt), len(data),
+			)
+			_, _ = fmt.Fprintf(
+				os.Stderr, "nuro: final_prompt='%s'\n", combinedContent,
+			)
+		}
 	}
 
 	// Build request
@@ -134,6 +161,14 @@ func main() {
 		if err != nil {
 			exitWithErr(err, 4)
 		}
+
+		if flags.verbose {
+			_, _ = fmt.Fprintf(
+				os.Stderr,
+				"nuro: stream response total_len=%d prompt_tokens=%d completion_tokens=%d total_tokens=%d\n",
+				len(total), usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens,
+			)
+		}
 		if flags.jsonOut {
 			out := provider.JSONResult{
 				Provider: prov.Name(),
@@ -153,6 +188,14 @@ func main() {
 	text, usage, err := prov.Complete(ctx, args)
 	if err != nil {
 		exitWithErr(err, 4)
+	}
+
+	if flags.verbose {
+		_, _ = fmt.Fprintf(
+			os.Stderr,
+			"nuro: response text_len=%d prompt_tokens=%d completion_tokens=%d total_tokens=%d\n",
+			len(text), usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens,
+		)
 	}
 	if flags.jsonOut {
 		out := provider.JSONResult{
@@ -238,4 +281,105 @@ func readMaybeStdin() ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("failed reading stdin: %w", err)
 	}
 	return b, true, nil
+}
+
+func redactKey(key string) string {
+	if len(key) <= 14 {
+		// Short key, just show first few chars
+		if len(key) <= 6 {
+			return key[:2] + "***"
+		}
+		return key[:4] + "***"
+	}
+	// Standard format: show first 10 and last 4 chars
+	return key[:10] + "***" + key[len(key)-4:]
+}
+
+func buildCombinedContent(prompt, data string) string {
+	// Mirror the same logic as in provider/openai.go buildUserContent
+	p := strings.TrimSpace(prompt)
+	d := strings.TrimSpace(data)
+
+	if p != "" && d != "" {
+		return fmt.Sprintf("%s in the following data: %s", p, d)
+	}
+	if p != "" {
+		return p
+	}
+	if d != "" {
+		return fmt.Sprintf("Data:\n```\n%s\n```", d)
+	}
+	return ""
+}
+
+// Data size thresholds (in bytes)
+const (
+	dataSizeWarningThreshold = 50 * 1024  // 50KB - warning threshold
+	dataSizeErrorThreshold   = 500 * 1024 // 500KB - error threshold (requires --force)
+)
+
+// validateDataSize checks if data is too large and provides warnings
+func validateDataSize(data string, force, verbose bool) error {
+	if data == "" {
+		return nil // No data, no issue
+	}
+
+	dataSize := len([]byte(data))
+
+	if verbose {
+		_, _ = fmt.Fprintf(
+			os.Stderr, "nuro: data size=%s (%d bytes)\n", formatBytes(dataSize), dataSize,
+		)
+	}
+
+	// Large data that requires --force to proceed
+	if dataSize > dataSizeErrorThreshold {
+		if !force {
+			return fmt.Errorf(
+				"data size %s (%d bytes) exceeds safe limit (%s). This could be expensive to send to LLM.\n"+
+					"Use --force/-f to proceed anyway, or reduce data size.\n"+
+					"Consider filtering with: head, tail, grep, jq, or similar tools",
+				formatBytes(dataSize), dataSize, formatBytes(dataSizeErrorThreshold),
+			)
+		}
+		if verbose {
+			_, _ = fmt.Fprintf(
+				os.Stderr,
+				"nuro: WARNING: Large data size %s forced with --force flag. This may be expensive.\n",
+				formatBytes(dataSize),
+			)
+		}
+		return nil
+	}
+
+	// Medium data that gets a warning
+	if dataSize > dataSizeWarningThreshold {
+		_, _ = fmt.Fprintf(
+			os.Stderr,
+			"nuro: WARNING: Data size %s (%d bytes) is large and may increase LLM costs.\n",
+			formatBytes(dataSize), dataSize,
+		)
+		if !verbose {
+			_, _ = fmt.Fprintf(
+				os.Stderr,
+				"nuro: Use --verbose to see more details or --force/-f to suppress warnings.\n",
+			)
+		}
+	}
+
+	return nil
+}
+
+// formatBytes formats byte count into human-readable format
+func formatBytes(bytes int) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
