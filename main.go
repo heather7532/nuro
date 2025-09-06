@@ -82,6 +82,8 @@ func main() {
 	if err != nil {
 		exitWithErr(err, 2)
 	}
+
+	// Handle version immediately after flag parsing, before any stdin processing
 	if flags.showVersion {
 		fmt.Println(version)
 		return
