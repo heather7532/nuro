@@ -12,26 +12,26 @@ func TestOllamaIntegrationViaOpenAIAdapter(t *testing.T) {
 	origProvider := os.Getenv("NURO_PROVIDER")
 	defer func() {
 		if origAPIKey == "" {
-			os.Unsetenv("NURO_API_KEY")
+			_ = os.Unsetenv("NURO_API_KEY")
 		} else {
-			os.Setenv("NURO_API_KEY", origAPIKey)
+			_ = os.Setenv("NURO_API_KEY", origAPIKey)
 		}
 		if origBaseURL == "" {
-			os.Unsetenv("NURO_BASE_URL")
+			_ = os.Unsetenv("NURO_BASE_URL")
 		} else {
-			os.Setenv("NURO_BASE_URL", origBaseURL)
+			_ = os.Setenv("NURO_BASE_URL", origBaseURL)
 		}
 		if origProvider == "" {
-			os.Unsetenv("NURO_PROVIDER")
+			_ = os.Unsetenv("NURO_PROVIDER")
 		} else {
-			os.Setenv("NURO_PROVIDER", origProvider)
+			_ = os.Setenv("NURO_PROVIDER", origProvider)
 		}
 	}()
 
 	// Test Ollama configuration using OpenAI adapter
-	os.Setenv("NURO_API_KEY", "ollama")
-	os.Setenv("NURO_BASE_URL", "http://localhost:11434/v1")
-	os.Setenv("NURO_PROVIDER", "openai")
+	_ = os.Setenv("NURO_API_KEY", "ollama")
+	_ = os.Setenv("NURO_BASE_URL", "http://localhost:11434/v1")
+	_ = os.Setenv("NURO_PROVIDER", "openai")
 
 	res, err := ResolveProviderAndModel("llama3.1:8b")
 	if err != nil {
@@ -66,25 +66,25 @@ func TestOllamaWithoutExplicitProvider(t *testing.T) {
 	origProvider := os.Getenv("NURO_PROVIDER")
 	defer func() {
 		if origAPIKey == "" {
-			os.Unsetenv("NURO_API_KEY")
+			_ = os.Unsetenv("NURO_API_KEY")
 		} else {
-			os.Setenv("NURO_API_KEY", origAPIKey)
+			_ = os.Setenv("NURO_API_KEY", origAPIKey)
 		}
 		if origBaseURL == "" {
-			os.Unsetenv("NURO_BASE_URL")
+			_ = os.Unsetenv("NURO_BASE_URL")
 		} else {
-			os.Setenv("NURO_BASE_URL", origBaseURL)
+			_ = os.Setenv("NURO_BASE_URL", origBaseURL)
 		}
 		if origProvider == "" {
-			os.Unsetenv("NURO_PROVIDER")
+			_ = os.Unsetenv("NURO_PROVIDER")
 		} else {
-			os.Setenv("NURO_PROVIDER", origProvider)
+			_ = os.Setenv("NURO_PROVIDER", origProvider)
 		}
 	}()
 
-	os.Setenv("NURO_API_KEY", "ollama")
-	os.Setenv("NURO_BASE_URL", "http://localhost:11434/v1")
-	os.Unsetenv("NURO_PROVIDER") // Unset to test default behavior
+	_ = os.Setenv("NURO_API_KEY", "ollama")
+	_ = os.Setenv("NURO_BASE_URL", "http://localhost:11434/v1")
+	_ = os.Unsetenv("NURO_PROVIDER") // Unset to test default behavior
 
 	res, err := ResolveProviderAndModel("gpt-4o-mini")
 	if err != nil {
@@ -108,25 +108,25 @@ func TestOllamaWithDifferentModels(t *testing.T) {
 	origProvider := os.Getenv("NURO_PROVIDER")
 	defer func() {
 		if origAPIKey == "" {
-			os.Unsetenv("NURO_API_KEY")
+			_ = os.Unsetenv("NURO_API_KEY")
 		} else {
-			os.Setenv("NURO_API_KEY", origAPIKey)
+			_ = os.Setenv("NURO_API_KEY", origAPIKey)
 		}
 		if origBaseURL == "" {
-			os.Unsetenv("NURO_BASE_URL")
+			_ = os.Unsetenv("NURO_BASE_URL")
 		} else {
-			os.Setenv("NURO_BASE_URL", origBaseURL)
+			_ = os.Setenv("NURO_BASE_URL", origBaseURL)
 		}
 		if origProvider == "" {
-			os.Unsetenv("NURO_PROVIDER")
+			_ = os.Unsetenv("NURO_PROVIDER")
 		} else {
-			os.Setenv("NURO_PROVIDER", origProvider)
+			_ = os.Setenv("NURO_PROVIDER", origProvider)
 		}
 	}()
 
-	os.Setenv("NURO_API_KEY", "ollama")
-	os.Setenv("NURO_BASE_URL", "http://localhost:11434/v1")
-	os.Setenv("NURO_PROVIDER", "openai")
+	_ = os.Setenv("NURO_API_KEY", "ollama")
+	_ = os.Setenv("NURO_BASE_URL", "http://localhost:11434/v1")
+	_ = os.Setenv("NURO_PROVIDER", "openai")
 
 	testModels := []string{
 		"llama3.1:8b",
@@ -169,38 +169,38 @@ func TestOllamaEnvironmentPrecedence(t *testing.T) {
 	origOpenAIBase := os.Getenv("OPENAI_BASE_URL")
 	defer func() {
 		if origAPIKey == "" {
-			os.Unsetenv("NURO_API_KEY")
+			_ = os.Unsetenv("NURO_API_KEY")
 		} else {
-			os.Setenv("NURO_API_KEY", origAPIKey)
+			_ = os.Setenv("NURO_API_KEY", origAPIKey)
 		}
 		if origBaseURL == "" {
-			os.Unsetenv("NURO_BASE_URL")
+			_ = os.Unsetenv("NURO_BASE_URL")
 		} else {
-			os.Setenv("NURO_BASE_URL", origBaseURL)
+			_ = os.Setenv("NURO_BASE_URL", origBaseURL)
 		}
 		if origProvider == "" {
-			os.Unsetenv("NURO_PROVIDER")
+			_ = os.Unsetenv("NURO_PROVIDER")
 		} else {
-			os.Setenv("NURO_PROVIDER", origProvider)
+			_ = os.Setenv("NURO_PROVIDER", origProvider)
 		}
 		if origOpenAIKey == "" {
-			os.Unsetenv("OPENAI_API_KEY")
+			_ = os.Unsetenv("OPENAI_API_KEY")
 		} else {
-			os.Setenv("OPENAI_API_KEY", origOpenAIKey)
+			_ = os.Setenv("OPENAI_API_KEY", origOpenAIKey)
 		}
 		if origOpenAIBase == "" {
-			os.Unsetenv("OPENAI_BASE_URL")
+			_ = os.Unsetenv("OPENAI_BASE_URL")
 		} else {
-			os.Setenv("OPENAI_BASE_URL", origOpenAIBase)
+			_ = os.Setenv("OPENAI_BASE_URL", origOpenAIBase)
 		}
 	}()
 
 	// Set both NURO_* and OPENAI_* vars to ensure NURO_* takes precedence
-	os.Setenv("NURO_API_KEY", "ollama")
-	os.Setenv("NURO_BASE_URL", "http://localhost:11434/v1")
-	os.Setenv("NURO_PROVIDER", "openai")
-	os.Setenv("OPENAI_API_KEY", "sk-real-openai-key")
-	os.Setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+	_ = os.Setenv("NURO_API_KEY", "ollama")
+	_ = os.Setenv("NURO_BASE_URL", "http://localhost:11434/v1")
+	_ = os.Setenv("NURO_PROVIDER", "openai")
+	_ = os.Setenv("OPENAI_API_KEY", "sk-real-openai-key")
+	_ = os.Setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
 	res, err := ResolveProviderAndModel("llama3.1:8b")
 	if err != nil {
@@ -228,26 +228,26 @@ func TestNativeOllamaProvider(t *testing.T) {
 	origProvider := os.Getenv("NURO_PROVIDER")
 	defer func() {
 		if origAPIKey == "" {
-			os.Unsetenv("NURO_API_KEY")
+			_ = os.Unsetenv("NURO_API_KEY")
 		} else {
-			os.Setenv("NURO_API_KEY", origAPIKey)
+			_ = os.Setenv("NURO_API_KEY", origAPIKey)
 		}
 		if origBaseURL == "" {
-			os.Unsetenv("NURO_BASE_URL")
+			_ = os.Unsetenv("NURO_BASE_URL")
 		} else {
-			os.Setenv("NURO_BASE_URL", origBaseURL)
+			_ = os.Setenv("NURO_BASE_URL", origBaseURL)
 		}
 		if origProvider == "" {
-			os.Unsetenv("NURO_PROVIDER")
+			_ = os.Unsetenv("NURO_PROVIDER")
 		} else {
-			os.Setenv("NURO_PROVIDER", origProvider)
+			_ = os.Setenv("NURO_PROVIDER", origProvider)
 		}
 	}()
 
 	// Test native Ollama configuration
-	os.Setenv("NURO_API_KEY", "dummy") // Ollama doesn't need a real API key
-	os.Setenv("NURO_BASE_URL", "http://localhost:11434")
-	os.Setenv("NURO_PROVIDER", "ollama")
+	_ = os.Setenv("NURO_API_KEY", "dummy") // Ollama doesn't need a real API key
+	_ = os.Setenv("NURO_BASE_URL", "http://localhost:11434")
+	_ = os.Setenv("NURO_PROVIDER", "ollama")
 
 	res, err := ResolveProviderAndModel("llama3.1:8b")
 	if err != nil {
@@ -282,25 +282,25 @@ func TestNativeOllamaDefaultModel(t *testing.T) {
 	origModel := os.Getenv("NURO_MODEL")
 	defer func() {
 		if origAPIKey == "" {
-			os.Unsetenv("NURO_API_KEY")
+			_ = os.Unsetenv("NURO_API_KEY")
 		} else {
-			os.Setenv("NURO_API_KEY", origAPIKey)
+			_ = os.Setenv("NURO_API_KEY", origAPIKey)
 		}
 		if origProvider == "" {
-			os.Unsetenv("NURO_PROVIDER")
+			_ = os.Unsetenv("NURO_PROVIDER")
 		} else {
-			os.Setenv("NURO_PROVIDER", origProvider)
+			_ = os.Setenv("NURO_PROVIDER", origProvider)
 		}
 		if origModel == "" {
-			os.Unsetenv("NURO_MODEL")
+			_ = os.Unsetenv("NURO_MODEL")
 		} else {
-			os.Setenv("NURO_MODEL", origModel)
+			_ = os.Setenv("NURO_MODEL", origModel)
 		}
 	}()
 
-	os.Setenv("NURO_API_KEY", "dummy")
-	os.Setenv("NURO_PROVIDER", "ollama")
-	os.Setenv("NURO_MODEL", "llama3.1:8b") // Set via env instead of CLI arg
+	_ = os.Setenv("NURO_API_KEY", "dummy")
+	_ = os.Setenv("NURO_PROVIDER", "ollama")
+	_ = os.Setenv("NURO_MODEL", "llama3.1:8b") // Set via env instead of CLI arg
 
 	res, err := ResolveProviderAndModel("") // No model specified via CLI
 	if err != nil {
