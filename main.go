@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/heather7532/nuro/config"
 	"github.com/heather7532/nuro/provider"
 	"github.com/heather7532/nuro/resolver"
 	"github.com/spf13/pflag"
@@ -87,6 +88,19 @@ func main() {
 	if flags.showVersion {
 		fmt.Println(version)
 		return
+	}
+	// Load .nuro config file if present, applying values as env vars
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		exitWithErr(err, 2) // Exit code 2 for config loading error
+	}
+	if cfg != nil {
+		if err := cfg.Validate(); err != nil {
+			exitWithErr(fmt.Errorf("invalid .nuro config: %w", err), 2)
+		}
+		if err := cfg.Apply(); err != nil {
+			exitWithErr(fmt.Errorf("failed to apply .nuro config: %w", err), 2)
+		}
 	}
 
 	// Resolve prompt & data per rules

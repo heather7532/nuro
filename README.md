@@ -1,7 +1,8 @@
 # nuro
 
-nuro is a light CLI that simplifies calling LLM APIs. With a unified interface, you can focus on your prompt,
-and nuro will take care of the complexity of talking directly to the provider API.
+nuro is a linux style CLI that simplifies calling LLM APIs. With a unified interface, you can focus on your prompt,
+and nuro will take care of the complexity of talking directly to the provider API.  Use it in scripts, pipelines, or
+just for quick experiments.  Chain it with other unix tools (and itself) to build powerful workflows.
 
 ## Getting Started
 
@@ -72,12 +73,65 @@ echo 'def factorial(n): return 1 if n <= 1 else n * factorial(n-1)' | \
 ```
 
 ## Prerequisites
-1. **Install Ollama**: Download from [ollama.ai](https://ollama.ai)
-2. **Start Ollama Server**: `ollama serve`
-3. **Pull Models**: `ollama pull llama3.1:8b`, `ollama pull mistral:7b`, etc.
-4. **Verify Ollama is Running**: `curl http://localhost:11434/api/tags`
 
-For more detailed information, check the [Ollama Integration Guide](docs/ollama_integration.md).
+nuro requires access to an LLM provider API. You must provide your own API keys for the provider you wish to use.
+
+### Option 1: Cloud Providers (Requires API Key)
+- **OpenAI**: Set `OPENAI_API_KEY` or `NURO_API_KEY` with your OpenAI API key
+- **Anthropic**: Set `ANTHROPIC_API_KEY` or `NURO_API_KEY` with your Anthropic API key
+- Other providers similarly require their respective API keys
+
+### Option 2: Local Models (Free - Recommended for Development)
+Install [Ollama](https://ollama.ai) to run models locally:
+
+```bash
+# Install Ollama
+# Visit https://ollama.ai for installation instructions
+
+# Start Ollama server
+ollama serve
+
+# Pull models you want to use
+ollama pull llama3.1:8b
+ollama pull mistral:7b
+ollama pull phi3:mini
+
+# Verify Ollama is running
+curl http://localhost:11434/api/tags
+```
+
+With Ollama installed, you can use nuro for free by setting:
+```bash
+export NURO_API_KEY=ollama
+export NURO_BASE_URL=http://localhost:11434/v1  
+export NURO_PROVIDER=openai
+```
+
+For more details on Ollama integration, see the [Ollama Integration Guide](docs/ollama_integration.md).
+## Configuration File (`.nuro`)
+
+nuro supports a configuration file named `.nuro` to set default environment variables and parameters. This file can be placed in two locations, with the following precedence:
+
+1.  **Current Directory**: If a `.nuro` file is found in the directory where you run the `nuro` command, it will be used.
+2.  **User's Home Directory**: If no `.nuro` file is found in the current directory, nuro will look for one in your user's home directory (e.g., `~/.nuro` on Linux/macOS, `%USERPROFILE%/.nuro` on Windows).
+
+Settings in the `.nuro` file take precedence over system environment variables but are overridden by command-line flags.
+
+### Example `.nuro` file (JSON format)
+
+```json
+{
+  "api_key": "sk-your-default-api-key",
+  "base_url": "https://api.openai.com/v1",
+  "provider": "openai",
+  "model": "gpt-4o-mini",
+  "max_tokens": 2048,
+  "temperature": 0.5,
+  "top_p": 0.9
+}
+```
+
+This allows you to set up project-specific or user-wide defaults without repeatedly typing flags or setting environment variables in your shell.
 
 ## Supported
 
