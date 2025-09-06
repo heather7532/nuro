@@ -19,6 +19,7 @@ var providerEnv = map[string]string{
 	"mistral":     "MISTRAL_API_KEY",
 	"together":    "TOGETHER_API_KEY",
 	"cohere":      "COHERE_API_KEY",
+	"ollama":      "OLLAMA_HOST", // Ollama doesn't use API keys but we can use OLLAMA_HOST
 }
 
 var modelHints = []struct {
@@ -193,6 +194,8 @@ func defaultModelFor(provider string) string {
 		return "command-r-plus"
 	case "azureopenai":
 		return "gpt-4o-mini"
+	case "ollama":
+		return "llama3.1:8b"
 	default:
 		return "unknown"
 	}

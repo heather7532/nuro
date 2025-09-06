@@ -51,9 +51,11 @@ func BuildProvider(res *ProviderResolution) (Provider, error) {
 	switch res.ProviderName {
 	case "openai":
 		return NewOpenAIProvider(res.APIKey, res.BaseURL), nil
+	case "ollama":
+		return NewOllamaProvider(res.BaseURL), nil
 	default:
 		return nil, fmt.Errorf(
-			"provider '%s' not implemented yet; set NURO_PROVIDER=openai or provide OPENAI_API_KEY",
+			"provider '%s' not implemented yet; set NURO_PROVIDER=openai/ollama or provide OPENAI_API_KEY",
 			res.ProviderName,
 		)
 	}
