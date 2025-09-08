@@ -98,6 +98,16 @@ func main() {
 		exitWithErr(err, 2) // Exit code 2 for config loading error
 	}
 
+	// If the user explicitly requested a named profile but no .nuro was found,
+	// fail early instead of falling back to environment variable discovery.
+	if flags.configName != "" && cfg == nil {
+		exitWithErr(
+			fmt.Errorf(
+				".nuro config not found but --cfg '%s' was specified", flags.configName,
+			), 2,
+		)
+	}
+
 	// Apply the appropriate profile based on CLI flag or config default
 	if cfg != nil {
 		if err := cfg.Validate(); err != nil {
