@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	"io"
 	"net/http"
 	"strings"
@@ -45,6 +44,16 @@ type oaChatRequest struct {
 	Stream      bool        `json:"stream,omitempty"`
 }
 
+// Responses API request shape (simplified)
+type oaResponsesRequest struct {
+	Model               string  `json:"model"`
+	Input               string  `json:"input"`
+	MaxCompletionTokens int     `json:"max_completion_tokens,omitempty"`
+	Temperature         float64 `json:"temperature,omitempty"`
+	TopP                float64 `json:"top_p,omitempty"`
+	Stream              bool    `json:"stream,omitempty"`
+}
+
 type oaUsage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
@@ -63,6 +72,7 @@ type oaResp struct {
 	Usage   *oaUsage   `json:"usage,omitempty"`
 }
 
+// Streamed chat chunk
 type oaStreamDelta struct {
 	Role    string `json:"role,omitempty"`
 	Content string `json:"content,omitempty"`
@@ -77,10 +87,91 @@ type oaStreamChunk struct {
 	Choices []oaStreamChoice `json:"choices"`
 }
 
+// Simplified Responses API streaming chunk
+type oaResponsesStreamChunk struct {
+	Output []struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text,omitempty"`
+		} `json:"content"`
+	} `json:"output"`
+}
+
+// Simplified Responses API non-stream response
+type oaResponsesResp struct {
+	Output []struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text,omitempty"`
+		} `json:"content"`
+	} `json:"output"`
+	// some providers may include usage-like fields; ignore for now
+}
+
+func modelUsesResponsesAPI(model string) bool {
+	m := strings.ToLower(model)
+	return strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "gpt-4.1")
+}
+
 func (p *openAIProvider) Complete(ctx context.Context, args CompletionArgs) (
 	string,
 	Usage, error,
 ) {
+	useResponses := modelUsesResponsesAPI(args.Model)
+
+	if useResponses {
+		// Build Responses API request
+		body := oaResponsesRequest{
+			Model:               args.Model,
+			Input:               buildUserContent(args.Prompt, args.Data),
+			MaxCompletionTokens: args.MaxTokens,
+			Temperature:         args.Temperature,
+			TopP:                args.TopP,
+			Stream:              false,
+		}
+		buf, _ := json.Marshal(body)
+
+		req, err := http.NewRequestWithContext(
+			ctx, "POST", p.baseURL+"/responses", bytes.NewReader(buf),
+		)
+		if err != nil {
+			return "", Usage{}, err
+		}
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			return "", Usage{}, err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			b, _ := io.ReadAll(resp.Body)
+			return "", Usage{}, fmt.Errorf(
+				"openai responses error: %s - %s", resp.Status, trimBody(b),
+			)
+		}
+
+		var r oaResponsesResp
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			return "", Usage{}, err
+		}
+
+		// Extract text from output/content
+		var sb strings.Builder
+		for _, out := range r.Output {
+			for _, c := range out.Content {
+				if c.Text != "" {
+					sb.WriteString(c.Text)
+				}
+			}
+		}
+
+		return sb.String(), Usage{}, nil
+	}
+
+	// Fallback to chat completions API
 	body := oaChatRequest{
 		Model:       args.Model,
 		Messages:    assembleMessages(args.Prompt, args.Data),
@@ -133,6 +224,105 @@ func (p *openAIProvider) Complete(ctx context.Context, args CompletionArgs) (
 func (p *openAIProvider) Stream(
 	ctx context.Context, args CompletionArgs, onDelta func(string),
 ) (string, Usage, error) {
+	useResponses := modelUsesResponsesAPI(args.Model)
+
+	if useResponses {
+		body := oaResponsesRequest{
+			Model:               args.Model,
+			Input:               buildUserContent(args.Prompt, args.Data),
+			MaxCompletionTokens: args.MaxTokens,
+			Temperature:         args.Temperature,
+			TopP:                args.TopP,
+			Stream:              true,
+		}
+		buf, _ := json.Marshal(body)
+
+		req, err := http.NewRequestWithContext(
+			ctx, "POST", p.baseURL+"/responses", bytes.NewReader(buf),
+		)
+		if err != nil {
+			return "", Usage{}, err
+		}
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+
+		// No client timeout here; rely on ctx
+		oldTimeout := p.client.Timeout
+		p.client.Timeout = 0
+		defer func() { p.client.Timeout = oldTimeout }()
+
+		resp, err := p.client.Do(req)
+		if err != nil {
+			return "", Usage{}, err
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			b, _ := io.ReadAll(resp.Body)
+			return "", Usage{}, fmt.Errorf(
+				"openai responses error: %s - %s", resp.Status, trimBody(b),
+			)
+		}
+
+		reader := bufio.NewReader(resp.Body)
+		var total strings.Builder
+		for {
+			line, err := reader.ReadString('\n')
+			if len(line) > 0 {
+				l := strings.TrimSpace(line)
+				if strings.HasPrefix(l, "data: ") {
+					payload := strings.TrimPrefix(l, "data: ")
+					if payload == "[DONE]" {
+						break
+					}
+					var chunk oaResponsesStreamChunk
+					if err := json.Unmarshal([]byte(payload), &chunk); err == nil {
+						for _, out := range chunk.Output {
+							for _, c := range out.Content {
+								if c.Text != "" {
+									onDelta(c.Text)
+									total.WriteString(c.Text)
+								}
+							}
+						}
+						continue
+					}
+					// fallback: try to unmarshal as chat stream chunk
+					var chatChunk oaStreamChunk
+					if err := json.Unmarshal([]byte(payload), &chatChunk); err == nil {
+						for _, ch := range chatChunk.Choices {
+							d := ch.Delta.Content
+							if d != "" {
+								onDelta(d)
+								total.WriteString(d)
+							}
+						}
+					}
+				}
+			}
+
+			if err != nil {
+				if errorsIsEOF(err) {
+					break
+				}
+				if ctx.Err() != nil {
+					return total.String(), Usage{}, ctx.Err()
+				}
+				// continue on short reads
+				if err == io.ErrUnexpectedEOF {
+					continue
+				}
+				if err != nil && err != io.EOF {
+					return total.String(), Usage{}, err
+				}
+			}
+		}
+
+		// Usage is not present in streamed chunks here
+		return total.String(), Usage{}, nil
+	}
+
+	// Chat completions streaming (existing behavior)
 	body := oaChatRequest{
 		Model:       args.Model,
 		Messages:    assembleMessages(args.Prompt, args.Data),
@@ -212,6 +402,7 @@ func (p *openAIProvider) Stream(
 	// Usage is not present in streamed chunks here
 	return total.String(), Usage{}, nil
 }
+
 func assembleMessages(prompt, data string) []oaChatMsg {
 	content := buildUserContent(prompt, data)
 	return []oaChatMsg{{Role: "user", Content: content}}
