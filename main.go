@@ -30,7 +30,8 @@ type cliFlags struct {
 	jsonOut        bool
 	verbose        bool
 	showVersion    bool
-	force          bool // -f / --force to override data size warnings
+	force          bool   // -f / --force to override data size warnings
+	configName     string // --cfg to select a named configuration profile
 }
 
 func parseFlags() (*cliFlags, error) {
@@ -58,7 +59,9 @@ func parseFlags() (*cliFlags, error) {
 	pflag.BoolVar(&f.jsonOut, "json", false, "Emit structured JSON result.")
 	pflag.BoolVar(&f.verbose, "verbose", false, "Verbose diagnostics to stderr.")
 	pflag.BoolVarP(&f.force, "force", "f", false, "Force sending large data without warnings.")
-	pflag.BoolVar(&f.showVersion, "version", false, "Print version and exit.")
+	pflag.StringVarP(
+		&f.configName, "cfg", "c", "", "Use a named configuration profile from .nuro file",
+	)
 	// --help is auto-provided
 
 	pflag.Parse()
@@ -89,18 +92,34 @@ func main() {
 		fmt.Println(version)
 		return
 	}
-	// Load .nuro config file if present, applying values as env vars
+	// Load .nuro config file if present
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		exitWithErr(err, 2) // Exit code 2 for config loading error
 	}
+
+	// Apply the appropriate profile based on CLI flag or config default
 	if cfg != nil {
 		if err := cfg.Validate(); err != nil {
 			exitWithErr(fmt.Errorf("invalid .nuro config: %w", err), 2)
 		}
-		if err := cfg.Apply(); err != nil {
-			exitWithErr(fmt.Errorf("failed to apply .nuro config: %w", err), 2)
+		if flags.configName != "" {
+			// Use the profile specified by the --cfg flag
+			if err := cfg.ApplyProfile(flags.configName); err != nil {
+				exitWithErr(
+					fmt.Errorf(
+						"failed to apply .nuro config profile '%s': %w", flags.configName, err,
+					), 2,
+				)
+			}
+		} else {
+			// Use the default profile (or first profile)
+			if err := cfg.Apply(); err != nil {
+				exitWithErr(fmt.Errorf("failed to apply .nuro config: %w", err), 2)
+			}
 		}
+	} else {
+		// No config file
 	}
 
 	// Resolve prompt & data per rules

@@ -107,7 +107,6 @@ export NURO_BASE_URL=http://localhost:11434/v1
 export NURO_PROVIDER=openai
 ```
 
-For more details on Ollama integration, see the [Ollama Integration Guide](docs/ollama_integration.md).
 ## Configuration File (`.nuro`)
 
 nuro supports a configuration file named `.nuro` to set default environment variables and parameters. This file can be placed in two locations, with the following precedence:
@@ -115,23 +114,45 @@ nuro supports a configuration file named `.nuro` to set default environment vari
 1.  **Current Directory**: If a `.nuro` file is found in the directory where you run the `nuro` command, it will be used.
 2.  **User's Home Directory**: If no `.nuro` file is found in the current directory, nuro will look for one in your user's home directory (e.g., `~/.nuro` on Linux/macOS, `%USERPROFILE%/.nuro` on Windows).
 
-Settings in the `.nuro` file take precedence over system environment variables but are overridden by command-line flags.
+### Named Configuration Profiles
 
-### Example `.nuro` file (JSON format)
+The `.nuro` file now uses a new structure based on **named profiles**. This allows you to define multiple configurations and switch between them using the `--cfg` CLI flag.
 
-```json
 {
-  "api_key": "sk-your-default-api-key",
-  "base_url": "https://api.openai.com/v1",
-  "provider": "openai",
-  "model": "gpt-4o-mini",
-  "max_tokens": 2048,
-  "temperature": 0.5,
-  "top_p": 0.9
+  "default": "personal",
+  "profiles": {
+    "profile1": {
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "api_key": "$OPENAI_API_KEY",
+      "base_url": "https://api.openai.com/v1",
+      "max_tokens": 2048,
+      "temperature": 0.5
+    },
+    "local-ollama": {
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "api_key": "dummy",
+      "base_url": "http://localhost:11434",
+      "temperature": 0.8
+    }
+  }
 }
-```
 
-This allows you to set up project-specific or user-wide defaults without repeatedly typing flags or setting environment variables in your shell.
+For a complete guide on the `.nuro` file, including syntax, usage, and security best practices, see [`.nuro` Configuration File Guide](docs/nuro_cfg.md) [docs/nuro_cfg.md](docs/nuro_cfg.md).
+
+### Precedence
+
+The order of precedence for configuration is (highest to lowest):
+
+1.  **CLI Flags** (e.g., `-m`, `--temperature`, `--cfg`)
+2.  **Selected Profile** (`--cfg`)
+3.  **System Environment Variables** (e.g., `NURO_API_KEY`)
+4.  **Default Profile** (if set in `.nuro`)
+5.  **First Profile** (if no default is set)
+6.  **Hardcoded Defaults in `nuro`**
+
+CLI flags override any conflicting values in the selected profile. A profile's settings are applied as environment variables, which give them higher precedence over system environment variables.
 
 ## Supported
 
