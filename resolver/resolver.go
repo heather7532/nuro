@@ -52,9 +52,11 @@ func ResolveProviderAndModel(modelArg string) (*provider.ProviderResolution, err
 		}
 	}
 
-	// Check for NURO_* variables first (highest precedence)
-	if nuroKey := os.Getenv("NURO_API_KEY"); nuroKey != "" {
-		return resolveWithNuroVars(nuroKey, cliModel)
+	// If any NURO_ environment variables are present (profile applied), prefer them.
+	// This makes .nuro profile values take precedence over other system env vars,
+	// while still allowing an explicit CLI model to override the profile model.
+	if os.Getenv("NURO_API_KEY") != "" || os.Getenv("NURO_PROVIDER") != "" || os.Getenv("NURO_MODEL") != "" || os.Getenv("NURO_BASE_URL") != "" {
+		return resolveWithNuroVars(os.Getenv("NURO_API_KEY"), cliModel)
 	}
 
 	// Auto-discover from common provider keys

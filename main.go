@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -152,6 +153,30 @@ func main() {
 		exitWithErr(err, 3)
 	}
 
+	// If a .nuro profile was applied it sets NURO_* env vars. Follow your requested
+	// precedence: profile values should take precedence over flags for numeric
+	// parameters (max_tokens, temperature, top_p). If NURO_* vars are present,
+	// override the parsed flag values.
+	argsSource := "flags"
+	if v := os.Getenv("NURO_MAX_TOKENS"); v != "" {
+		if i, e := strconv.Atoi(v); e == nil {
+			flags.maxTokens = i
+			argsSource = "NURO_PROFILE"
+		}
+	}
+	if v := os.Getenv("NURO_TEMPERATURE"); v != "" {
+		if f, e := strconv.ParseFloat(v, 64); e == nil {
+			flags.temperature = f
+			argsSource = "NURO_PROFILE"
+		}
+	}
+	if v := os.Getenv("NURO_TOP_P"); v != "" {
+		if f, e := strconv.ParseFloat(v, 64); e == nil {
+			flags.topP = f
+			argsSource = "NURO_PROFILE"
+		}
+	}
+
 	if flags.verbose || (pflag.CommandLine.Changed("model") && !flags.jsonOut) {
 		keyDisplay := redactKey(res.APIKey)
 		_, _ = fmt.Fprintf(
@@ -162,9 +187,9 @@ func main() {
 		if flags.verbose {
 			_, _ = fmt.Fprintf(
 				os.Stderr,
-				"nuro: args max_tokens=%d temp=%.1f top_p=%.1f timeout=%ds stream=%t json=%t\n",
+				"nuro: args max_tokens=%d temp=%.2f top_p=%.2f timeout=%ds stream=%t json=%t source=%s\n",
 				flags.maxTokens, flags.temperature, flags.topP, flags.timeoutSec, flags.stream,
-				flags.jsonOut,
+				flags.jsonOut, argsSource,
 			)
 			_, _ = fmt.Fprintf(
 				os.Stderr, "nuro: prompt_len=%d data_len=%d\n", len(prompt), len(data),
@@ -191,15 +216,20 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), args.Timeout)
 	defer cancel()
 
+	// Propagate verbose flag into provider implementations via context so they can
+	// emit endpoint-level diagnostics (e.g., which OpenAI endpoint was used).
+	ctx = context.WithValue(ctx, "nuro_verbose", flags.verbose)
+
+	// Build provider instance
 	prov, err := provider.BuildProvider(res)
 	if err != nil {
 		exitWithErr(err, 3)
 	}
 
 	if flags.stream {
+		// Streaming path
 		total, usage, err := prov.Stream(
 			ctx, args, func(delta string) {
-				// Stream deltas to stdout as they arrive
 				_, _ = fmt.Fprint(os.Stdout, delta)
 			},
 		)
@@ -221,7 +251,7 @@ func main() {
 				Usage:    usage,
 				Text:     total,
 			}
-			_, _ = fmt.Fprintln(os.Stdout) // newline after streaming text block if any
+			_, _ = fmt.Fprintln(os.Stdout)
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			_ = enc.Encode(out)

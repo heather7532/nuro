@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -46,12 +47,12 @@ type oaChatRequest struct {
 
 // Responses API request shape (simplified)
 type oaResponsesRequest struct {
-	Model               string  `json:"model"`
-	Input               string  `json:"input"`
-	MaxCompletionTokens int     `json:"max_completion_tokens,omitempty"`
-	Temperature         float64 `json:"temperature,omitempty"`
-	TopP                float64 `json:"top_p,omitempty"`
-	Stream              bool    `json:"stream,omitempty"`
+	Model           string  `json:"model"`
+	Input           string  `json:"input"`
+	MaxOutputTokens int     `json:"max_output_tokens,omitempty"`
+	Temperature     float64 `json:"temperature,omitempty"`
+	TopP            float64 `json:"top_p,omitempty"`
+	Stream          bool    `json:"stream,omitempty"`
 }
 
 type oaUsage struct {
@@ -105,31 +106,66 @@ type oaResponsesResp struct {
 			Text string `json:"text,omitempty"`
 		} `json:"content"`
 	} `json:"output"`
-	// some providers may include usage-like fields; ignore for now
 }
 
+// Decide which models should use the Responses API
 func modelUsesResponsesAPI(model string) bool {
-	m := strings.ToLower(model)
-	return strings.HasPrefix(m, "o1") || strings.HasPrefix(m, "gpt-4.1")
+	m := strings.TrimSpace(strings.ToLower(model))
+	if m == "" {
+		return false
+	}
+	// Models that should use the Responses API
+	prefixes := []string{"o1", "gpt-4.1", "gpt-5"}
+	for _, p := range prefixes {
+		if strings.HasPrefix(m, p) {
+			return true
+		}
+	}
+	return false
 }
 
-func (p *openAIProvider) Complete(ctx context.Context, args CompletionArgs) (
-	string,
-	Usage, error,
-) {
+// Some Responses API models (observed: gpt-5 family) don't accept sampling params
+// like temperature/top_p. Return true when the model supports sampling.
+func responsesSupportsSampling(model string) bool {
+	m := strings.TrimSpace(strings.ToLower(model))
+	if m == "" {
+		return true
+	}
+	// If model is gpt-5 family, don't send sampling params
+	if strings.HasPrefix(m, "gpt-5") {
+		return false
+	}
+	// default: assume sampling params are supported
+	return true
+}
+
+func (p *openAIProvider) Complete(ctx context.Context, args CompletionArgs) (string, Usage, error) {
 	useResponses := modelUsesResponsesAPI(args.Model)
 
 	if useResponses {
-		// Build Responses API request
-		body := oaResponsesRequest{
-			Model:               args.Model,
-			Input:               buildUserContent(args.Prompt, args.Data),
-			MaxCompletionTokens: args.MaxTokens,
-			Temperature:         args.Temperature,
-			TopP:                args.TopP,
-			Stream:              false,
+		var body oaResponsesRequest
+		body.Model = args.Model
+		body.Input = buildUserContent(args.Prompt, args.Data)
+		body.MaxOutputTokens = args.MaxTokens
+		body.Stream = false
+
+		if responsesSupportsSampling(args.Model) {
+			body.Temperature = args.Temperature
+			body.TopP = args.TopP
 		}
+
 		buf, _ := json.Marshal(body)
+
+		if vb, _ := ctx.Value("nuro_verbose").(bool); vb {
+			_, _ = fmt.Fprintf(
+				os.Stderr, "nuro: openai: using /responses endpoint for model=%s\n", args.Model,
+			)
+			bstr := string(buf)
+			if len(bstr) > 800 {
+				bstr = bstr[:800] + "..."
+			}
+			_, _ = fmt.Fprintf(os.Stderr, "nuro: openai: request body: %s\n", bstr)
+		}
 
 		req, err := http.NewRequestWithContext(
 			ctx, "POST", p.baseURL+"/responses", bytes.NewReader(buf),
@@ -158,7 +194,6 @@ func (p *openAIProvider) Complete(ctx context.Context, args CompletionArgs) (
 			return "", Usage{}, err
 		}
 
-		// Extract text from output/content
 		var sb strings.Builder
 		for _, out := range r.Output {
 			for _, c := range out.Content {
@@ -227,15 +262,27 @@ func (p *openAIProvider) Stream(
 	useResponses := modelUsesResponsesAPI(args.Model)
 
 	if useResponses {
-		body := oaResponsesRequest{
-			Model:               args.Model,
-			Input:               buildUserContent(args.Prompt, args.Data),
-			MaxCompletionTokens: args.MaxTokens,
-			Temperature:         args.Temperature,
-			TopP:                args.TopP,
-			Stream:              true,
+		var body oaResponsesRequest
+		body.Model = args.Model
+		body.Input = buildUserContent(args.Prompt, args.Data)
+		body.MaxOutputTokens = args.MaxTokens
+		body.Stream = true
+		if responsesSupportsSampling(args.Model) {
+			body.Temperature = args.Temperature
+			body.TopP = args.TopP
 		}
 		buf, _ := json.Marshal(body)
+
+		if vb, _ := ctx.Value("nuro_verbose").(bool); vb {
+			_, _ = fmt.Fprintf(
+				os.Stderr, "nuro: openai: streaming /responses endpoint for model=%s\n", args.Model,
+			)
+			bstr := string(buf)
+			if len(bstr) > 800 {
+				bstr = bstr[:800] + "..."
+			}
+			_, _ = fmt.Fprintf(os.Stderr, "nuro: openai: request body: %s\n", bstr)
+		}
 
 		req, err := http.NewRequestWithContext(
 			ctx, "POST", p.baseURL+"/responses", bytes.NewReader(buf),
@@ -246,7 +293,6 @@ func (p *openAIProvider) Stream(
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
 		req.Header.Set("Content-Type", "application/json")
 
-		// No client timeout here; rely on ctx
 		oldTimeout := p.client.Timeout
 		p.client.Timeout = 0
 		defer func() { p.client.Timeout = oldTimeout }()
@@ -287,7 +333,6 @@ func (p *openAIProvider) Stream(
 						}
 						continue
 					}
-					// fallback: try to unmarshal as chat stream chunk
 					var chatChunk oaStreamChunk
 					if err := json.Unmarshal([]byte(payload), &chatChunk); err == nil {
 						for _, ch := range chatChunk.Choices {
@@ -308,7 +353,6 @@ func (p *openAIProvider) Stream(
 				if ctx.Err() != nil {
 					return total.String(), Usage{}, ctx.Err()
 				}
-				// continue on short reads
 				if err == io.ErrUnexpectedEOF {
 					continue
 				}
@@ -318,11 +362,10 @@ func (p *openAIProvider) Stream(
 			}
 		}
 
-		// Usage is not present in streamed chunks here
 		return total.String(), Usage{}, nil
 	}
 
-	// Chat completions streaming (existing behavior)
+	// Chat completions streaming path
 	body := oaChatRequest{
 		Model:       args.Model,
 		Messages:    assembleMessages(args.Prompt, args.Data),
@@ -342,7 +385,6 @@ func (p *openAIProvider) Stream(
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	// No client timeout here; rely on ctx
 	oldTimeout := p.client.Timeout
 	p.client.Timeout = 0
 	defer func() { p.client.Timeout = oldTimeout }()
@@ -389,7 +431,6 @@ func (p *openAIProvider) Stream(
 			if ctx.Err() != nil {
 				return total.String(), Usage{}, ctx.Err()
 			}
-			// continue on short reads
 			if err == io.ErrUnexpectedEOF {
 				continue
 			}
@@ -399,7 +440,6 @@ func (p *openAIProvider) Stream(
 		}
 	}
 
-	// Usage is not present in streamed chunks here
 	return total.String(), Usage{}, nil
 }
 
