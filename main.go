@@ -42,8 +42,8 @@ func parseFlags() (*cliFlags, error) {
 		&f.promptFlag, "prompt", "p", "",
 		"Prompt text. Use --prompt-stdin to read prompt from stdin instead.",
 	)
-	pflag.BoolVar(
-		&f.promptUseStdin, "prompt-stdin", false,
+	pflag.BoolVarP(
+		&f.promptUseStdin, "prompt-stdin", "pfs", false,
 		"Read prompt from stdin instead of using --prompt",
 	)
 	pflag.StringVar(&f.dataInline, "data", "", "Inline data/payload string.")
