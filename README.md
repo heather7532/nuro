@@ -35,7 +35,13 @@ nuro -m llama3.1:8b -p "write a haiku about programming" --stream
 
 # Using stdin
 ls -la | nuro -p "explain these files in a table" --verbose
-```
+
+### Prompt Input Methods
+
+- `-p "text"` / `--prompt "text"` → prompt = "text"
+- `-p` (no value) → prompt = stdin
+- `-s` / `--prompt-stdin` → Read prompt from stdin instead of using `-p`
+- If stdin empty → error ("no prompt provided on stdin")
 
 ### Using Aliases
 ```bash
@@ -131,7 +137,6 @@ The `.nuro` file now uses a new structure based on **named profiles**. This allo
     },
     "local-ollama": {
       "provider": "ollama",
-      "model": "llama3.1:8b",
       "api_key": "dummy",
       "base_url": "http://localhost:11434",
       "temperature": 0.8

@@ -43,7 +43,7 @@ func parseFlags() (*cliFlags, error) {
 		"Prompt text. Use --prompt-stdin to read prompt from stdin instead.",
 	)
 	pflag.BoolVarP(
-		&f.promptUseStdin, "prompt-stdin", "pfs", false,
+		&f.promptUseStdin, "prompt-stdin", "s", false,
 		"Read prompt from stdin instead of using --prompt",
 	)
 	pflag.StringVar(&f.dataInline, "data", "", "Inline data/payload string.")
@@ -304,7 +304,7 @@ func resolvePromptAndData(f *cliFlags) (prompt string, data string, err error) {
 	switch {
 	case f.promptUseStdin:
 		if !stdinPresent || len(stdinData) == 0 {
-			return "", "", usageError("'-p' used with no prompt on stdin")
+			return "", "", usageError("'-s' or '-p' with no value used but no prompt on stdin")
 		}
 		prompt = string(stdinData)
 	case f.promptFlag != "":
